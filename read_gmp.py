@@ -494,9 +494,12 @@ def CMAP_get_all_columns(gmp_path, chunk_infos):
         file.seek(dmap_offset + CMAP_COLUMN_OFFSET)
         column_words = int.from_bytes(file.read(2), 'little')
 
-        print(f"Num of columns: {column_words}")
+        print(f"Num of columns words: {column_words}")
 
-        for column_idx in range(column_words):
+        words = 0
+        column_idx = 0
+
+        while (words < column_words):
             start_offset = file.tell()
 
             if PRINT_COLUMN:
@@ -508,10 +511,12 @@ def CMAP_get_all_columns(gmp_path, chunk_infos):
             
             if column_height > 7:
                 print(f"\nError: height {column_height} above 7. Column {column_idx} at offset {hex(start_offset)}")
+                print(f"words count = {words}")
                 sys.exit(-1)
 
             if column_offset > 7:
                 print(f"\nError: BlockOffset {column_offset} above 7. Column {column_idx} at offset {hex(start_offset)}")
+                print(f"words count = {words}")
                 sys.exit(-1)
 
             # get back to start position
@@ -532,6 +537,9 @@ def CMAP_get_all_columns(gmp_path, chunk_infos):
 
             column_data = file.read(column_size)
             columns_array.append(column_data)
+
+            words += column_size // 2
+            column_idx += 1
 
     return ( columns_array , columns_size_array )
 
@@ -567,14 +575,13 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
 
         file.seek(dmap_offset + DMAP_COLUMN_OFFSET)
         column_words = int.from_bytes(file.read(4), 'little')
-        #num_unique_blocks = int.from_bytes(file.read(4), 'little')
 
-        #file.read(16*16)
+        print(f"Num of columns words: {column_words}")
 
-        print(f"Num of columns: {column_words}")
-        #print(f"Num of unique blocks: {num_unique_blocks}\n\n")
+        words = 0
+        column_idx = 0
 
-        for column_idx in range(column_words):
+        while (words < column_words):
             start_offset = file.tell()
 
             if PRINT_COLUMN:
@@ -586,10 +593,12 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
             
             if column_height > 7:
                 print(f"\nError: height {column_height} above 7. Column {column_idx} at offset {hex(start_offset)}")
+                print(f"words count = {words}")
                 sys.exit(-1)
 
             if column_offset > 7:
                 print(f"\nError: BlockOffset {column_offset} above 7. Column {column_idx} at offset {hex(start_offset)}")
+                print(f"words count = {words}")
                 sys.exit(-1)
 
             # get back to start position
@@ -610,6 +619,9 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
 
             column_data = file.read(column_size)
             columns_array.append(column_data)
+
+            words += column_size // 2
+            column_idx += 1
 
     return ( columns_array , columns_size_array )
 

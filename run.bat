@@ -1,3 +1,3 @@
 @echo off
-python read_dmap_gmp.py psx_wil.gmp psx
+python read_gmp.py wil.gmp pc
 pause
