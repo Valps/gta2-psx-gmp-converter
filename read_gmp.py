@@ -173,30 +173,30 @@ def read_lid_info(lid):
 def read_block_side_info(side):
     data = []
 
-    tile_texture_idx = (lid % 1024)
+    tile_texture_idx = (side % 1024)
     data.append(tile_texture_idx)
-    lid = lid >> 10
+    side = side >> 10
 
-    wall = (lid % 2)
+    wall = (side % 2)
     data.append(wall)
-    lid = lid >> 1
+    side = side >> 1
 
-    bullet_wall = (lid % 2)
+    bullet_wall = (side % 2)
     data.append(bullet_wall)
-    lid = lid >> 1
+    side = side >> 1
 
-    flat = (lid % 2)
+    flat = (side % 2)
     data.append(flat)
-    lid = lid >> 1
+    side = side >> 1
 
-    flip = (lid % 2)
+    flip = (side % 2)
     data.append(flip)
-    lid = lid >> 1
+    side = side >> 1
 
-    tile_rotation = lid
+    tile_rotation = side
     data.append(tile_rotation)
 
-    print(f"Lid tile: {tile_texture_idx}")
+    print(f"Side tile: {tile_texture_idx}")
     print(f"Tile rotation: {return_rotation_value_str(tile_rotation)}°")
     print(f"Wall: {wall}, Bullet Wall: {bullet_wall}")
     print(f"Flat: {flat}")
@@ -464,7 +464,27 @@ def get_light_info_data(gmp_path, chunk_infos):
 
 
 
+def print_all_info_block_data(block_data):
+    left_side = int.from_bytes(block_data[0:2], 'little')
+    right_side = int.from_bytes(block_data[2:4], 'little')
+    top_side = int.from_bytes(block_data[4:6], 'little')
+    bottom_side = int.from_bytes(block_data[6:8], 'little')
+    lid = int.from_bytes(block_data[8:10], 'little')
 
+    print("Left side info:")
+    read_block_side_info(left_side)
+
+    print("\nRight side info:")
+    read_block_side_info(right_side)
+
+    print("\Top side info:")
+    read_block_side_info(top_side)
+
+    print("\nBottom side info:")
+    read_block_side_info(bottom_side)
+
+    print("\nLid info:")
+    read_lid_info(lid)
 
 
 
@@ -540,12 +560,92 @@ def CMAP_get_all_columns(gmp_path, chunk_infos):
 
             words += column_size // 2
             column_idx += 1
+        
+        print(f"Number of columns: {column_idx}")
 
-    return ( columns_array , columns_size_array )
+        column_finish_offset = file.tell()
+
+        print(f"Column data finish offset: {hex(column_finish_offset)}")
+
+        num_total_blocks = int.from_bytes(file.read(2), 'little')
+        print(f"Total num of blocks: {num_total_blocks}")
+
+    return ( columns_array , columns_size_array, column_finish_offset )
 
 
+def CMAP_read_block(gmp_path, chunk_infos, column_finish_offset, tgt_x, tgt_y, tgt_z):
+    with open(gmp_path, 'rb') as file:
+        
+        cmap_offset = chunk_infos["CMAP"][0]
+        size = chunk_infos["CMAP"][1]
 
+        tgt_block_column_data_offset = cmap_offset + 2*(tgt_x + tgt_y*256)
 
+        print(f"Block column idx at offset {hex(tgt_block_column_data_offset)}")
+
+        file.seek(tgt_block_column_data_offset)
+
+        #column_index = int.from_bytes(file.read(4), 'little')
+        #print(f"Target Column index: {column_index}")
+        #tgt_column_data = columns_data[column_index]
+
+        words_count = int.from_bytes(file.read(2), 'little')
+        tgt_column_offset = cmap_offset + CMAP_COLUMN_OFFSET + 2 + 2*words_count # 4*words_count
+
+        print(f"\nTGT Column offset: {hex(tgt_column_offset)}")
+        file.seek(tgt_column_offset)
+
+        column_height = int.from_bytes(file.read(1))
+        column_offset = int.from_bytes(file.read(1))
+        num_blocks = column_height - column_offset
+
+        # 0 = height
+        # 1 = offset
+        # 2,3 = pad
+        # ... = blockd
+
+        #blocks_num = tgt_column_data[0] - tgt_column_data[1]   # height - offset
+
+        print("\nColumn Data:")
+        print(f"Height: {column_height}")
+        print(f"Offset: {column_offset}")
+        print(f"Num Blocks: {num_blocks}")
+        print(f"Words count = {words_count}\n")
+
+        all_column_blocks_id = []
+
+        for block_idx in range(num_blocks):
+            block_id = int.from_bytes( file.read(2) ,'little' )
+            print(f"Block ID: {block_id} for blockd {block_idx}")
+            all_column_blocks_id.append( block_id )
+
+        print("")
+
+        tgt_blockd_index = tgt_z - column_offset
+
+        if (tgt_blockd_index < 0
+            or tgt_z > column_height):
+            print("Empty block")
+            return
+
+        tgt_block_id = all_column_blocks_id[tgt_blockd_index]
+
+        print(f"Index in blockd of target block: {tgt_blockd_index}")
+        print(f"Target Block ID: {tgt_block_id}\n")
+
+        block_info_array_offset = column_finish_offset + 2 #cmap_offset + DMAP_COLUMN_OFFSET + 4 + 4*columns_total_words + 4
+
+        print(f"Block info offset = {hex(block_info_array_offset)}")
+
+        tgt_block_info_offset = block_info_array_offset + tgt_block_id*BLOCK_INFO_SIZE
+
+        print(f"TGT Block info offset = {hex(tgt_block_info_offset)}")
+        file.seek( tgt_block_info_offset )
+
+        block_data = file.read(BLOCK_INFO_SIZE)
+
+        print("")
+        print_all_info_block_data(block_data)
 
 
 
@@ -622,13 +722,20 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
 
             words += column_size // 2
             column_idx += 1
+    
+        print(f"Number of columns: {column_idx}")
+        print(f"Column data finish offset: {hex(file.tell())}")
+        #unique_blocks = int.from_bytes(file.read(4), 'little')
+        #print(f"Number of unique blocks: {unique_blocks}")
 
-    return ( columns_array , columns_size_array )
+    
+
+    return ( columns_array , columns_size_array , column_words )
 
 
 
 
-def DMAP_read_block(gmp_path, chunk_infos, columns_data, columns_size_array, tgt_x, tgt_y, tgt_z):
+def DMAP_read_block(gmp_path, chunk_infos, columns_total_words, tgt_x, tgt_y, tgt_z):
 
     with open(gmp_path, 'rb') as file:
         
@@ -641,48 +748,70 @@ def DMAP_read_block(gmp_path, chunk_infos, columns_data, columns_size_array, tgt
 
         file.seek(tgt_block_column_data_offset)
 
-        column_index = int.from_bytes(file.read(4), 'little')
+        #column_index = int.from_bytes(file.read(4), 'little')
+        #print(f"Target Column index: {column_index}")
+        #tgt_column_data = columns_data[column_index]
 
-        print(f"Target Column index: {column_index}")
-        
-        tgt_column_data = columns_data[column_index]
+        words_count = int.from_bytes(file.read(4), 'little')
+        tgt_column_offset = dmap_offset + DMAP_COLUMN_OFFSET + 4 + 4*words_count
+
+        print(f"\nTGT Column offset: {hex(tgt_column_offset)}")
+        file.seek(tgt_column_offset)
+
+        column_height = int.from_bytes(file.read(1))
+        column_offset = int.from_bytes(file.read(1))
+        num_blocks = column_height - column_offset
 
         # 0 = height
         # 1 = offset
         # 2,3 = pad
         # ... = blockd
 
-        blocks_num = tgt_column_data[0] - tgt_column_data[1]   # height - offset
+        #blocks_num = tgt_column_data[0] - tgt_column_data[1]   # height - offset
 
         print("\nColumn Data:")
-        print(f"Height: {tgt_column_data[0]}")
-        print(f"Offset: {tgt_column_data[1]}")
-        print(f"Num Blocks: {blocks_num}\n")
+        print(f"Height: {column_height}")
+        print(f"Offset: {column_offset}")
+        print(f"Num Blocks: {num_blocks}")
+        print(f"Words count = {words_count}\n")
 
         all_column_blocks_id = []
 
-        for block_idx in range(blocks_num):
-            block_id = int.from_bytes( tgt_column_data[4 : 4 + 4*(block_idx+1)] ,'little' )
+        file.read(2)    # skip padding
+
+        for block_idx in range(num_blocks):
+            block_id = int.from_bytes( file.read(4) ,'little' )
+            print(f"Block ID: {block_id} for blockd {block_idx}")
             all_column_blocks_id.append( block_id )
 
-        all_columns_data_size = sum(columns_size_array)
+        print("")
 
-        # now go to block section
-        # 4 for column_words dword
+        tgt_blockd_index = tgt_z - column_offset
 
-        block_info_array_offset = ( dmap_offset 
-                  + DMAP_COLUMN_OFFSET 
-                  + 4 
-                  + all_columns_data_size 
-                  + BLOCK_INFO_SIZE*(tgt_z - tgt_column_data[1]) )
+        if (tgt_blockd_index < 0
+            or tgt_z > column_height):
+            print("Empty block")
+            return
 
-        file.seek( block_info_array_offset )
+        tgt_block_id = all_column_blocks_id[tgt_blockd_index]
 
-        print(hex(block_info_array_offset))
-        
-        #dword = int.from_bytes(file.read(4), 'little')
+        print(f"Index in blockd of target block: {tgt_blockd_index}")
+        print(f"Target Block ID: {tgt_block_id}\n")
 
-        #print(dword)
+        block_info_array_offset = dmap_offset + DMAP_COLUMN_OFFSET + 4 + 4*columns_total_words + 4
+
+        print(f"Block info offset = {hex(block_info_array_offset)}")
+
+        tgt_block_info_offset = block_info_array_offset + tgt_block_id*BLOCK_INFO_SIZE
+
+        print(f"TGT Block info offset = {hex(tgt_block_info_offset)}")
+        file.seek( tgt_block_info_offset )
+
+        block_data = file.read(BLOCK_INFO_SIZE)
+
+        print("")
+        print_all_info_block_data(block_data)
+
         
         
 
@@ -711,14 +840,18 @@ def read_gmp(gmp_path, chunk_infos, psx):
     #print(f"Creating copy of {filename}.gmp")
     #shutil.copyfile(gmp_path, output_path)
 
-    x, y, z = 146, 154, 2
+    #x, y, z = 146, 154, 2
     #x, y, z = 2, 2, 3
 
+    #x, y, z = 86, 117, 6
+    x, y, z = 56, 173, 1
+
     if not psx:
-        columns_data, columns_size_array = DMAP_get_all_columns(gmp_path, chunk_infos)
-        DMAP_read_block(gmp_path, chunk_infos, columns_data, columns_size_array, x, y, z)
+        columns_data, columns_size_array, column_words = DMAP_get_all_columns(gmp_path, chunk_infos)
+        DMAP_read_block(gmp_path, chunk_infos, column_words, x, y, z)
     else:
-        columns_data, columns_size_array = CMAP_get_all_columns(gmp_path, chunk_infos)
+        columns_data, columns_size_array, column_finish_offset = CMAP_get_all_columns(gmp_path, chunk_infos)
+        CMAP_read_block(gmp_path, chunk_infos, column_finish_offset, x, y, z)
 
 
 
