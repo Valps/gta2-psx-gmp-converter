@@ -278,6 +278,9 @@ def CMAP_read_all_columns(gmp_path, chunk_infos):
             column_height = int.from_bytes(file.read(1))
             column_offset = int.from_bytes(file.read(1))
             num_blocks = column_height - column_offset
+
+            #if column_height == 1 and column_offset == 0:
+            #    print(f"Column (h,o) = (1,0) in offset {hex(start_offset)}")
             
             if column_height > 7:
                 print(f"\nError: height {column_height} above 7. Column {column_idx} at offset {hex(start_offset)}")
@@ -317,9 +320,15 @@ def CMAP_read_all_columns(gmp_path, chunk_infos):
         num_total_blocks = int.from_bytes(file.read(2), 'little')
         print(f"Num unique blocks: {num_total_blocks}")
 
+
+    print(f"Block info start offset = {hex(block_data_info_offset)}")
+    print(f"Block info end offset = {hex(block_data_info_offset + num_total_blocks*BLOCK_INFO_SIZE)}")
+
     return block_data_info_offset + 2
 
 def CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset):
+    max_number = 0
+    max_num_offset = 0
     # initialize block info array with empty blocks
     empty_block_data = bytes([0 for _ in range(BLOCK_INFO_SIZE)])
     block_info_array = [ [ [empty_block_data for _ in range(MAP_WIDTH+1)] for _ in range(MAP_HEIGHT+1) ] for _ in range(MAP_MAX_Z+1) ]
@@ -344,24 +353,30 @@ def CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset):
                 column_offset = int.from_bytes(file.read(1))
                 num_blocks = column_height - column_offset
 
+                #if column_height == 1 and column_offset == 0:
+                #    print(f"Column (h,o) = (1,0) in offset {hex(tgt_column_offset)}")
+
                 all_column_blocks_id = []
 
                 # get all block ids from this column
                 for block_idx in range(num_blocks):
                     block_id = int.from_bytes( file.read(2), 'little' )
+                    if block_id > max_number:
+                        max_number = block_id
+                        max_num_offset = tgt_column_offset
                     all_column_blocks_id.append( block_id )
 
                 # block info data starts at
-                block_info_array_offset = block_data_info_offset # + 2   
+                block_info_array_offset = block_data_info_offset
 
                 # get block info from each block using its id
                 for blockd_idx, block_id in enumerate(all_column_blocks_id):
-                    block_info_offset = block_info_array_offset + block_id*BLOCK_INFO_SIZE
+                    block_info_offset = block_info_array_offset + 2*block_id  #block_id*BLOCK_INFO_SIZE
                     file.seek( block_info_offset )
                     block_data = file.read(BLOCK_INFO_SIZE)
-                    block_z = column_offset + blockd_idx
-                    block_info_array[block_z][y][x] = block_data
-
+                    z = column_offset + blockd_idx
+                    block_info_array[z][y][x] = block_data
+    print(f"Max block ID: {max_number} at column offset {hex(max_num_offset)}")
     return block_info_array
 
 
@@ -383,7 +398,6 @@ def uncompress_gmp(gmp_path, chunk_infos, psx):
         block_info_array = DMAP_uncompress(gmp_path, chunk_infos, column_finish_offset)
     else:
         block_data_info_offset = CMAP_read_all_columns(gmp_path, chunk_infos)
-        print(f"Block info offset = {hex(block_data_info_offset)}")
         block_info_array = CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset)
 
     return block_info_array
