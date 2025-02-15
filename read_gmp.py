@@ -681,7 +681,7 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
         words = 0
         column_idx = 0
 
-        while (words < column_words):
+        while (words < 2*column_words):
             start_offset = file.tell()
 
             if PRINT_COLUMN:
@@ -725,8 +725,8 @@ def DMAP_get_all_columns(gmp_path, chunk_infos):
     
         print(f"Number of columns: {column_idx}")
         print(f"Column data finish offset: {hex(file.tell())}")
-        #unique_blocks = int.from_bytes(file.read(4), 'little')
-        #print(f"Number of unique blocks: {unique_blocks}")
+        unique_blocks = int.from_bytes(file.read(4), 'little')
+        print(f"Number of unique blocks: {unique_blocks}\n\n")
 
     
 
@@ -844,7 +844,8 @@ def read_gmp(gmp_path, chunk_infos, psx):
     #x, y, z = 2, 2, 3
 
     #x, y, z = 86, 117, 6
-    x, y, z = 56, 173, 1
+    #x, y, z = 56, 173, 1
+    x, y, z = 237, 203, 3
 
     if not psx:
         columns_data, columns_size_array, column_words = DMAP_get_all_columns(gmp_path, chunk_infos)
