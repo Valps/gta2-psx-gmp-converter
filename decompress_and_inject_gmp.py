@@ -35,6 +35,73 @@ def get_filename(path):
     j = str_path.rfind('.')
     return str_path[i:j]
 
+def read_block_side_info(side, str_side):
+    tile_texture_idx = (side % 1024)
+    side = side >> 10
+
+    wall = (side % 2)
+    side = side >> 1
+
+    bullet_wall = (side % 2)
+    side = side >> 1
+
+    flat = (side % 2)
+    side = side >> 1
+
+    flip = (side % 2)
+    side = side >> 1
+
+    tile_rotation = side
+
+    print(f"{str_side} tile: {tile_texture_idx}")
+    #print(f"Tile rotation: {return_rotation_value_str(tile_rotation)}°")
+    #print(f"Wall: {wall}, Bullet Wall: {bullet_wall}")
+    #print(f"Flat: {flat}")
+    #print(f"Flip: {flip}")
+
+def read_lid_info(lid):
+    tile_texture_idx = (lid % 1024)
+    lid = lid >> 10
+
+    lighting_filter = (lid % 4)
+    lid = lid >> 2
+
+    flat = (lid % 2)
+    lid = lid >> 1
+
+    flip = (lid % 2)
+    lid = lid >> 1
+
+    tile_rotation = lid
+
+    print(f"Lid tile: {tile_texture_idx}")
+    #print(f"Tile rotation: {tile_rotation}°")
+    #print(f"Filter: {lighting_filter}")
+    #print(f"Flat: {flat}")
+    #print(f"Flip: {flip}")
+
+def print_all_info_block_data(block_data):
+    left_side = int.from_bytes(block_data[0:2], 'little')
+    right_side = int.from_bytes(block_data[2:4], 'little')
+    top_side = int.from_bytes(block_data[4:6], 'little')
+    bottom_side = int.from_bytes(block_data[6:8], 'little')
+    lid = int.from_bytes(block_data[8:10], 'little')
+
+    #print("Left side info:")
+    read_block_side_info(left_side, "Left")
+
+    #print("\nRight side info:")
+    read_block_side_info(right_side, "Right")
+
+    #print("\nTop side info:")
+    read_block_side_info(top_side, "Top")
+
+    #print("\nBottom side info:")
+    read_block_side_info(bottom_side, "Bottom")
+
+    #print("\nLid info:")
+    read_lid_info(lid)
+
 def detect_headers_and_get_chunks(gmp_path, psx: bool):
 
     chunk_info = dict(UMAP = [None, None], 
@@ -128,7 +195,7 @@ def write_uncompressed_map(output_path, chunk_infos, block_info_array):
 
         while (current_offset < umap_offset + size):
             file.write(block_info_array[z][y][x])
-                
+
             x += 1
 
             if (x > 255):
@@ -204,7 +271,7 @@ def DMAP_read_all_columns(gmp_path, chunk_infos):
 
     return column_finish_offset + 4
 
-def DMAP_uncompress(gmp_path, chunk_infos, column_finish_offset):
+def DMAP_decompress(gmp_path, chunk_infos, column_finish_offset):
     # initialize block info array with empty blocks
     empty_block_data = bytes([0 for _ in range(BLOCK_INFO_SIZE)])
     block_info_array = [ [ [empty_block_data for _ in range(MAP_WIDTH+1)] for _ in range(MAP_HEIGHT+1) ] for _ in range(MAP_MAX_Z+1) ]
@@ -312,6 +379,7 @@ def CMAP_read_all_columns(gmp_path, chunk_infos):
         print(f"Number of columns: {column_idx}")
 
         column_finish_offset = file.tell()
+        print(f"Column data start offset: {hex(dmap_offset + CMAP_COLUMN_OFFSET + 2)}")
         print(f"Column data finish offset: {hex(column_finish_offset)}")
 
         block_data_info_offset = column_finish_offset + 1024 # TODO: psx vs pc CMAP: include 1024 (padding?)
@@ -326,7 +394,7 @@ def CMAP_read_all_columns(gmp_path, chunk_infos):
 
     return block_data_info_offset + 2
 
-def CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset):
+def CMAP_decompress(gmp_path, chunk_infos, block_data_info_offset):
     max_number = 0
     max_num_offset = 0
     # initialize block info array with empty blocks
@@ -353,9 +421,6 @@ def CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset):
                 column_offset = int.from_bytes(file.read(1))
                 num_blocks = column_height - column_offset
 
-                #if column_height == 1 and column_offset == 0:
-                #    print(f"Column (h,o) = (1,0) in offset {hex(tgt_column_offset)}")
-
                 all_column_blocks_id = []
 
                 # get all block ids from this column
@@ -372,10 +437,22 @@ def CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset):
                 # get block info from each block using its id
                 for blockd_idx, block_id in enumerate(all_column_blocks_id):
                     block_info_offset = block_info_array_offset + 2*block_id  #block_id*BLOCK_INFO_SIZE
+
+                    # TODO: testing
+                    #if x == 12 and y == 12:
+                    #    block_info_offset = 353830
+                    #if x == 14 and y == 12:
+                    #    block_info_offset = 353818
+                    #if x == 16 and y == 12:
+                    #    block_info_offset = 277486
+                    #if x == 18 and y == 12:
+                    #    block_info_offset = 252313
+
                     file.seek( block_info_offset )
                     block_data = file.read(BLOCK_INFO_SIZE)
                     z = column_offset + blockd_idx
                     block_info_array[z][y][x] = block_data
+
     print(f"Max block ID: {max_number} at column offset {hex(max_num_offset)}")
     return block_info_array
 
@@ -395,10 +472,10 @@ def uncompress_gmp(gmp_path, chunk_infos, psx):
     if not psx:
         column_finish_offset = DMAP_read_all_columns(gmp_path, chunk_infos)
         print(f"Column finish offset = {hex(column_finish_offset)}")
-        block_info_array = DMAP_uncompress(gmp_path, chunk_infos, column_finish_offset)
+        block_info_array = DMAP_decompress(gmp_path, chunk_infos, column_finish_offset)
     else:
         block_data_info_offset = CMAP_read_all_columns(gmp_path, chunk_infos)
-        block_info_array = CMAP_uncompress(gmp_path, chunk_infos, block_data_info_offset)
+        block_info_array = CMAP_decompress(gmp_path, chunk_infos, block_data_info_offset)
 
     return block_info_array
 
@@ -465,6 +542,7 @@ def main():
     print("Injecting block info...")
     write_uncompressed_map(output_path, tgt_chunk_infos, block_info_array)
 
+    print("Success!")
         
 
 
