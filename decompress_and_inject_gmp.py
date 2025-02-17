@@ -80,6 +80,15 @@ def read_lid_info(lid):
     #print(f"Flat: {flat}")
     #print(f"Flip: {flip}")
 
+def is_slope(block_data):
+    slope_byte = block_data[-1]
+    slope_byte = slope_byte >> 2
+    if (slope_byte == 0):
+        return False
+    if (slope_byte > 60):
+        return False
+    return True
+
 def print_all_info_block_data(block_data):
     left_side = int.from_bytes(block_data[0:2], 'little')
     right_side = int.from_bytes(block_data[2:4], 'little')
@@ -101,6 +110,22 @@ def print_all_info_block_data(block_data):
 
     #print("\nLid info:")
     read_lid_info(lid)
+
+def fix_psx_slope(block_data):
+    slope_byte = block_data[-1]
+    slope_byte = slope_byte >> 2
+    if (49 <= slope_byte <= 52):
+        lid = int.from_bytes(block_data[8:10], 'little')
+        tile_texture_idx = (lid % 1024)
+        if tile_texture_idx == 384:
+            tile_texture_idx = 1023
+            lid = lid | tile_texture_idx    # set all lowest 10 bits to 1  (1111 1111 11 = 1023)
+            new_block_data = block_data[:8] + bytes([lid % 256, lid // 256]) + block_data[10:]
+        else:
+            new_block_data = block_data
+    else:
+        new_block_data = block_data
+    return new_block_data
 
 def detect_headers_and_get_chunks(gmp_path, psx: bool):
 
@@ -398,6 +423,8 @@ def CMAP_decompress(gmp_path, chunk_infos, block_data_finish_offset, block_data_
     strange_blocks = 0
     normal_blocks = 0
     max_idx_below_8000 = 0
+    max_idx_above_8000 = 0
+    min_idx_above_8000 = 40000
     # initialize block info array with empty blocks
     empty_block_data = bytes([0 for _ in range(BLOCK_INFO_SIZE)])
     block_info_array = [ [ [empty_block_data for _ in range(MAP_WIDTH+1)] for _ in range(MAP_HEIGHT+1) ] for _ in range(MAP_MAX_Z+1) ]
@@ -435,42 +462,45 @@ def CMAP_decompress(gmp_path, chunk_infos, block_data_finish_offset, block_data_
                 # get all block ids from this column
                 for block_idx in range(num_blocks):
                     block_id = int.from_bytes( file.read(2), 'little' )
+
+                    # TODO: testing
                     if block_id >= 32768:
                         strange_blocks += 1
+                        if block_id > max_idx_above_8000:
+                            max_idx_above_8000 = block_id
+                        if block_id < min_idx_above_8000:
+                            min_idx_above_8000 = block_id
                     else:
                         normal_blocks += 1
                         if block_id > max_idx_below_8000:
                             max_idx_below_8000 = block_id
+
                     all_column_blocks_id.append( block_id )
 
                 # get block info from each block using its id
                 for blockd_idx, block_id in enumerate(all_column_blocks_id):
                     if (block_id < 32768):
                         block_info_offset = block_info_array_offset + BLOCK_INFO_SIZE*block_id  #block_id*BLOCK_INFO_SIZE
+                        file.seek( block_info_offset )
+                        block_data = file.read(BLOCK_INFO_SIZE)
+
+                        # now fix tile 384 to 1023 for 3-sided slopes
+                        if is_slope(block_data):
+                            block_data = fix_psx_slope(block_data)
                     else:
-                        #block_info_offset = block_data_finish_offset + 1536 + 4 + BLOCK_INFO_SIZE*(block_id - 32768)    # 1536 = 0x600
-                        reverse_index = block_id - 32768
-                        block_info_total_size = num_total_blocks*BLOCK_INFO_SIZE
-                        block_info_offset = block_info_array_offset + block_info_total_size - BLOCK_INFO_SIZE*reverse_index - BLOCK_INFO_SIZE
-
-                    # TODO: testing
-                    #if x == 12 and y == 12:
-                    #    block_info_offset = 353830
-                    #if x == 14 and y == 12:
-                    #    block_info_offset = 353818
-                    #if x == 16 and y == 12:
-                    #    block_info_offset = 277486
-                    #if x == 18 and y == 12:
-                    #    block_info_offset = 252313
-
-                    file.seek( block_info_offset )
-                    block_data = file.read(BLOCK_INFO_SIZE)
+                        block_info_offset = block_data_finish_offset + 1536 + 4 + 4*(block_id - 32768)    # 1536 = 0x600
+                        file.seek( block_info_offset )
+                        lid_slope_data = file.read(4)
+                        block_data = bytes([0,0  ,  0,0  ,  0,0  ,  0,0 ]) + lid_slope_data
+                    
                     z = column_offset + blockd_idx
                     block_info_array[z][y][x] = block_data
 
     print(f"Normal blocks with index below 0x8000: {normal_blocks}")
     print(f"Strange blocks with index above 0x8000: {strange_blocks}")
     print(f"Max idx below 0x8000: {max_idx_below_8000}")
+    print(f"Max idx above 0x8000: {max_idx_above_8000}; Min idx: {min_idx_above_8000}")
+    print(f"Thus, unique blocks with idx above 0x8000: {max_idx_above_8000 - min_idx_above_8000 + 1}")
     return block_info_array
 
 
