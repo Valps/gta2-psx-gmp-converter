@@ -35,6 +35,18 @@ def get_filename(path):
     j = str_path.rfind('.')
     return str_path[i:j]
 
+def convert_int_to_dword(integer):  # low endian
+    b1 = integer % 256
+    b2 = (integer >> 8) % 256
+    b3 = (b2 >> 8) % 256
+    b4 = (b3 >> 8) % 256
+    return bytes([b1, b2, b3, b4])
+
+def convert_int_to_word(integer):  # low endian
+    b1 = integer % 256
+    b2 = integer // 256
+    return bytes([b1, b2])
+
 def read_block_side_info(side, str_side):
     tile_texture_idx = (side % 1024)
     side = side >> 10
@@ -526,7 +538,6 @@ def uncompress_gmp(gmp_path, chunk_infos, psx):
         block_info_array = CMAP_decompress(gmp_path, chunk_infos, block_data_finish_offset, block_data_info_offset, num_total_blocks)
 
     return block_info_array
-
 
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)
